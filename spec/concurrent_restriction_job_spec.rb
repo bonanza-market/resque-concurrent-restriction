@@ -64,28 +64,28 @@ describe Resque::Plugins::ConcurrentRestriction do
       IdentifiedRestrictionJob.tracking_class(IdentifiedRestrictionJob.tracking_key(1)).should == IdentifiedRestrictionJob
       Jobs::NestedRestrictionJob.tracking_class(Jobs::NestedRestrictionJob.tracking_key).should == Jobs::NestedRestrictionJob
     end
-    
+
   end
 
   context "encode/decode" do
 
     it "should encode jobs correctly" do
       job = Resque::Job.new("somequeue", {"class" => "RestrictionJob", "args" => [1, 2, 3]})
-      JSON.parse(ConcurrentRestrictionJob.encode(job)).should == JSON.parse('{"queue":"somequeue","payload":{"class":"RestrictionJob","args":[1,2,3]}}')
+      JSON.parse(ConcurrentRestrictionJob.encode_job(job)).should == JSON.parse('{"queue":"somequeue","payload":{"class":"RestrictionJob","args":[1,2,3]}}')
     end
 
     it "should decode jobs correctly" do
-      ConcurrentRestrictionJob.decode(nil).should == nil
+      ConcurrentRestrictionJob.decode_job_string(nil).should == nil
 
-      job = ConcurrentRestrictionJob.decode('{"queue":"somequeue","payload":{"class":"RestrictionJob","args":[1,2,3]}}')
+      job = ConcurrentRestrictionJob.decode_job_string('{"queue":"somequeue","payload":{"class":"RestrictionJob","args":[1,2,3]}}')
       job.should == Resque::Job.new("somequeue", {"class" => "RestrictionJob", "args" => [1, 2, 3]})
     end
 
     it "should rountrip encode/decode jobs correctly" do
       job = Resque::Job.new("somequeue", {"class" => "RestrictionJob", "args" => [1, 2, 3]})
-      ConcurrentRestrictionJob.decode(ConcurrentRestrictionJob.encode(job)).should == job
+      ConcurrentRestrictionJob.decode_job_string(ConcurrentRestrictionJob.encode_job(job)).should == job
     end
-    
+
   end
 
   context "locking" do
@@ -130,7 +130,7 @@ describe Resque::Plugins::ConcurrentRestriction do
 
       sleep 0.1
       t1.alive?.should == true
-      
+
       t2 = Thread.new do
         ConcurrentRestrictionJob.run_atomically("some_lock_key") do
           t1.alive?.should == false
@@ -142,7 +142,7 @@ describe Resque::Plugins::ConcurrentRestriction do
       t1.join
       counter.should == "second"
     end
-    
+
     it "should fail if can't acquire lock within tries" do
       did_run1 = did_run2 = false
 
@@ -154,14 +154,14 @@ describe Resque::Plugins::ConcurrentRestriction do
 
       sleep 0.1
       t1.alive?.should == true
-      
+
       t2 = Thread.new do
         ConcurrentRestrictionJob.run_atomically("some_lock_key", 2) do
           did_run1 = true
         end
       end
       t2.join
-      
+
       t3 = Thread.new do
         ConcurrentRestrictionJob.run_atomically("some_lock_key", 100) do
           did_run2 = true
@@ -388,7 +388,7 @@ describe Resque::Plugins::ConcurrentRestriction do
   end
 
   context "#stash_if_restricted" do
-    
+
     it "should return false and mark running for job that is not restricted" do
       job = Resque::Job.new("somequeue", {"class" => "ConcurrentRestrictionJob", "args" => []})
       ConcurrentRestrictionJob.stash_if_restricted(job).should == false
@@ -443,19 +443,19 @@ describe Resque::Plugins::ConcurrentRestriction do
       ConcurrentRestrictionJob.runnables("somequeue2").sort.should == [ConcurrentRestrictionJob.tracking_key]
 
     end
-    
+
     it "should repush job and return true if it can't acquire a lock" do
       old = Resque::Plugins::ConcurrentRestriction.lock_tries
       begin
         Resque::Plugins::ConcurrentRestriction.lock_tries = 0
-  
+
         job = Resque::Job.new("somequeue", {"class" => "ConcurrentRestrictionJob", "args" => []})
         ConcurrentRestrictionJob.stash_if_restricted(job).should == true
         Resque.peek("somequeue").should == {"class" => "ConcurrentRestrictionJob", "args" => []}
       ensure
         Resque::Plugins::ConcurrentRestriction.lock_tries = old
       end
-      
+
     end
 
   end
@@ -475,14 +475,14 @@ describe Resque::Plugins::ConcurrentRestriction do
       old = Resque::Plugins::ConcurrentRestriction.lock_tries
       begin
         Resque::Plugins::ConcurrentRestriction.lock_tries = 0
-  
+
         ConcurrentRestrictionJob.next_runnable_job('somequeue').should be_nil
         ConcurrentRestrictionJob.restriction_queue(ConcurrentRestrictionJob.tracking_key, "somequeue").should == [job1]
       ensure
         Resque::Plugins::ConcurrentRestriction.lock_tries = old
       end
     end
-    
+
     it "should not get a job if nothing runnable" do
       job1 = Resque::Job.new("somequeue", {"class" => "ConcurrentRestrictionJob", "args" => []})
       ConcurrentRestrictionJob.set_running_count(ConcurrentRestrictionJob.tracking_key, 99)
@@ -546,14 +546,14 @@ describe Resque::Plugins::ConcurrentRestriction do
       old = Resque::Plugins::ConcurrentRestriction.lock_tries
       begin
         Resque::Plugins::ConcurrentRestriction.lock_tries = 0
-  
+
         ConcurrentRestrictionJob.release_restriction(job)
         ConcurrentRestrictionJob.running_count(ConcurrentRestrictionJob.tracking_key).should == 1
       ensure
         Resque::Plugins::ConcurrentRestriction.lock_tries = old
       end
     end
-    
+
   end
 
   context "#reset_restrictions" do
@@ -621,7 +621,7 @@ describe Resque::Plugins::ConcurrentRestriction do
   end
 
   context "#stats" do
-    
+
     it "should have blank info when nothing going on" do
       stats = ConcurrentRestrictionJob.stats
       stats[:queues].should == {}
@@ -636,7 +636,7 @@ describe Resque::Plugins::ConcurrentRestriction do
       job1 = Resque::Job.new("queue1", {"class" => "IdentifiedRestrictionJob", "args" => [1]})
       IdentifiedRestrictionJob.push_to_restriction_queue(job1)
       IdentifiedRestrictionJob.set_running_count(IdentifiedRestrictionJob.tracking_key(1), 2)
-      
+
       stats = IdentifiedRestrictionJob.stats
       stats[:identifiers].should == {}
     end

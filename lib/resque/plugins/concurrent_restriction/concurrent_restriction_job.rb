@@ -140,13 +140,13 @@ module Resque
       end
 
       # Encodes the job into the restriction queue
-      def encode(job)
+      def encode_job(job)
         item = {:queue => job.queue, :payload => job.payload}
         Resque.encode(item)
       end
 
       # Decodes the job from the restriction queue
-      def decode(str)
+      def decode_job_string(str)
         item = Resque.decode(str)
         Resque::Job.new(item['queue'], item['payload']) if item
       end
@@ -174,8 +174,8 @@ module Resque
         tracking_key = tracking_key(*job.args)
 
         case location
-          when :back then Resque.redis.rpush(restriction_queue_key(tracking_key, job.queue), encode(job))
-          when :front then Resque.redis.lpush(restriction_queue_key(tracking_key, job.queue), encode(job))
+          when :back then Resque.redis.rpush(restriction_queue_key(tracking_key, job.queue), encode_job(job))
+          when :front then Resque.redis.lpush(restriction_queue_key(tracking_key, job.queue), encode_job(job))
           else raise "Invalid location to ConcurrentRestriction.push_to_restriction_queue"
         end
 
@@ -200,7 +200,7 @@ module Resque
         # increment by one to indicate that we are running
         increment_running_count(tracking_key) if str
 
-        decode(str)
+        decode_job_string(str)
       end
 
       # Grabs the raw data (undecoded) from the restriction queue
@@ -210,7 +210,7 @@ module Resque
 
       # Grabs the contents of the restriction queue (decoded)
       def restriction_queue(tracking_key, queue)
-        restriction_queue_raw(tracking_key, queue).collect {|s| decode(s) }
+        restriction_queue_raw(tracking_key, queue).collect {|s| decode_job_string(s) }
       end
 
       # Returns the number of jobs currently running
@@ -238,7 +238,7 @@ module Resque
       # If we increment past that, we are restricted.  Incrementing is only done
       # after the job is cleared for execution due to checking the runnable
       # state, and post increment we setup runnable for future jobs based on
-      # the new "restricted" value  
+      # the new "restricted" value
       def increment_running_count(tracking_key)
         count_key = running_count_key(tracking_key)
         value = Resque.redis.incr(count_key)
@@ -369,7 +369,7 @@ module Resque
             exp_backoff *= 2
           end
         end
-        
+
         return acquired_lock
       end
 
@@ -393,7 +393,7 @@ module Resque
           end
 
         end
-        
+
         # if run_atomically fails to acquire the lock, we need to put
         # the job back on the queue for processing later and act restricted
         # upstack so nothing gets run
@@ -401,7 +401,7 @@ module Resque
           restricted = true
           job.recreate
         end
-        
+
         return restricted
       end
 
@@ -414,7 +414,7 @@ module Resque
         lock_key = lock_key(tracking_key)
 
         run_atomically(lock_key) do
-          
+
           # since we don't have a lock when we get the runnable,
           # we need to check it again
           still_runnable = runnable?(tracking_key, queue)
@@ -426,7 +426,7 @@ module Resque
         end
 
         return job
-          
+
       end
 
       # Decrements the running_count - to be called at end of job
@@ -479,7 +479,7 @@ module Resque
         end
 
         return counts_reset, queues_enabled
-        
+
       end
 
       def stats(extended=false)
@@ -522,7 +522,7 @@ module Resque
         result[:runnable_count] = runnable_count
 
         return result
-        
+
       end
 
     end
