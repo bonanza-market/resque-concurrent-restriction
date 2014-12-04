@@ -26,7 +26,4 @@ Gem::Specification.new do |s|
   s.add_development_dependency('rspec', '~> 2.5')
   s.add_development_dependency('awesome_print')
 
-  # Needed for testing newer resque on ruby 1.8.7
-  s.add_development_dependency('json')
-
 end
