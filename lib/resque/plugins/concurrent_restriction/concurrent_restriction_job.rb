@@ -442,44 +442,48 @@ module Resque
         end
       end
 
+      def delete_keys_matching(match)
+        cursor = 0
+        counts_reset = 0
+        loop do
+          cursor, keys = Resque.redis.scan(cursor, match: match)
+          keys.each_slice(1000) do |key_slice|
+            counts_reset += Resque.redis.del(*key_slice)
+          end
+          break if cursor == "0"
+        end
+        counts_reset
+      end
+
       # Resets everything to be runnable
       def reset_restrictions
 
         counts_reset = 0
-        count_keys = Resque.redis.keys("concurrent.count.*")
-        if count_keys.size > 0
-          count_keys.each_slice(10000) do |key_slice|
-            counts_reset += Resque.redis.del(*key_slice)
-          end
-        end
-
-        runnable_keys = Resque.redis.keys("concurrent.runnable*")
-        if runnable_keys.size > 0
-          runnable_keys.each_slice(10000) do |runnable_slice|
-            Resque.redis.del(*runnable_slice)
-          end
-        end
+        counts_reset += delete_keys_matching "concurrent.count.*"
+        counts_reset += delete_keys_matching "concurrent.runnable*"
 
         Resque.redis.del(queue_count_key)
         queues_enabled = 0
-        queue_keys = Resque.redis.keys("concurrent.queue.*")
-        queue_keys.each do |k|
-          len = Resque.redis.llen(k)
-          if len > 0
-            parts = k.split(".")
-            queue = parts[2]
-            ident = parts[3..-1].join('.')
-            tracking_key = "concurrent.tracking.#{ident}"
+        queue_cursor = 0
+        loop do
+          queue_cursor, queue_keys = scan(queue_cursor, match: "concurrent.queue.*")
+          queue_keys.each do |k|
+            len = Resque.redis.llen(k)
+            if len > 0
+              parts = k.split(".")
+              queue = parts[2]
+              ident = parts[3..-1].join('.')
+              tracking_key = "concurrent.tracking.#{ident}"
 
-            increment_queue_count(queue, len)
-            update_queues_available(tracking_key, queue, :add)
-            mark_runnable(tracking_key, true)
-            queues_enabled += 1
+              increment_queue_count(queue, len)
+              update_queues_available(tracking_key, queue, :add)
+              mark_runnable(tracking_key, true)
+              queues_enabled += 1
+            end
           end
+          break if queue_cursor == "0"
         end
-
-        return counts_reset, queues_enabled
-
+        [counts_reset, queues_enabled]
       end
 
       def stats(extended=false)
