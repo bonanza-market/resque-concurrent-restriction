@@ -466,7 +466,7 @@ module Resque
         queues_enabled = 0
         queue_cursor = 0
         loop do
-          queue_cursor, queue_keys = scan(queue_cursor, match: "concurrent.queue.*")
+          queue_cursor, queue_keys = Resque.redis.scan(queue_cursor, match: "concurrent.queue.*")
           queue_keys.each do |k|
             len = Resque.redis.llen(k)
             if len > 0
