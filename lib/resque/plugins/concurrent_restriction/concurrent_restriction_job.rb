@@ -445,13 +445,18 @@ module Resque
       def delete_keys_matching(match)
         cursor = 0
         counts_reset = 0
+        list_keys = []
+
         loop do
           cursor, keys = Resque.redis.scan(cursor, match: match)
-          keys.each_slice(1000) do |key_slice|
-            counts_reset += Resque.redis.del(*key_slice)
-          end
+          list_keys += keys
           break if cursor == "0"
         end
+
+        list_keys.each_slice(1000) do |key_slice|
+          counts_reset += Resque.redis.del(*key_slice)
+        end
+
         counts_reset
       end
 
@@ -465,24 +470,29 @@ module Resque
         Resque.redis.del(queue_count_key)
         queues_enabled = 0
         queue_cursor = 0
+        list_queue_keys = []
+
         loop do
           queue_cursor, queue_keys = Resque.redis.scan(queue_cursor, match: "concurrent.queue.*")
-          queue_keys.each do |k|
-            len = Resque.redis.llen(k)
-            if len > 0
-              parts = k.split(".")
-              queue = parts[2]
-              ident = parts[3..-1].join('.')
-              tracking_key = "concurrent.tracking.#{ident}"
-
-              increment_queue_count(queue, len)
-              update_queues_available(tracking_key, queue, :add)
-              mark_runnable(tracking_key, true)
-              queues_enabled += 1
-            end
-          end
+          list_queue_keys += queue_keys
           break if queue_cursor == "0"
         end
+
+        list_queue_keys.each do |k|
+          len = Resque.redis.llen(k)
+          if len > 0
+            parts = k.split(".")
+            queue = parts[2]
+            ident = parts[3..-1].join('.')
+            tracking_key = "concurrent.tracking.#{ident}"
+
+            increment_queue_count(queue, len)
+            update_queues_available(tracking_key, queue, :add)
+            mark_runnable(tracking_key, true)
+            queues_enabled += 1
+          end
+        end
+
         [counts_reset, queues_enabled]
       end
 
