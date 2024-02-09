@@ -28,8 +28,8 @@ module Resque
       # default values
       self.lock_timeout = 60
       self.lock_tries = 15
-      self.reserve_queued_job_attempts = 1
-      self.restricted_before_queued = false
+      self.reserve_queued_job_attempts = 10
+      self.restricted_before_queued = true
 
       # Allows configuring via class accessors
       def self.configure
