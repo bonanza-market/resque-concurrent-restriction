@@ -448,7 +448,7 @@ module Resque
         list_keys = []
 
         loop do
-          cursor, keys = Resque.redis.scan(cursor, match: match)
+          cursor, keys = Resque.redis.scan(cursor, count: 100000, match: match)
           list_keys += keys
           break if cursor == "0"
         end
@@ -473,7 +473,7 @@ module Resque
         list_queue_keys = []
 
         loop do
-          queue_cursor, queue_keys = Resque.redis.scan(queue_cursor, match: "concurrent.queue.*")
+          queue_cursor, queue_keys = Resque.redis.scan(queue_cursor, count: 100000, match: "concurrent.queue.*")
           list_queue_keys += queue_keys
           break if queue_cursor == "0"
         end
