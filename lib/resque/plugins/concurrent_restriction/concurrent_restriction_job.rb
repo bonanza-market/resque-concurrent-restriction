@@ -195,10 +195,15 @@ module Resque
           clear_runnable(tracking_key, queue)
         end
 
-        decrement_queue_count(queue)
+        # Only adjust the aggregate count if we actually took a job off the queue - lpop returns nil
+        # when a stale runnable entry points at an empty restriction queue, and decrementing for
+        # those pops drives the count negative with nothing to ever bring it back up.
+        if str
+          decrement_queue_count(queue)
 
-        # increment by one to indicate that we are running
-        increment_running_count(tracking_key) if str
+          # increment by one to indicate that we are running
+          increment_running_count(tracking_key)
+        end
 
         decode_job_string(str)
       end
@@ -467,7 +472,6 @@ module Resque
         counts_reset += delete_keys_matching "concurrent.count.*"
         counts_reset += delete_keys_matching "concurrent.runnable*"
 
-        Resque.redis.del(queue_count_key)
         queues_enabled = 0
         queue_cursor = 0
         list_queue_keys = []
@@ -478,6 +482,8 @@ module Resque
           break if queue_cursor == "0"
         end
 
+        queue_counts = {}
+
         list_queue_keys.each do |k|
           len = Resque.redis.llen(k)
           if len > 0
@@ -486,12 +492,22 @@ module Resque
             ident = parts[3..-1].join('.')
             tracking_key = "concurrent.tracking.#{ident}"
 
-            increment_queue_count(queue, len)
+            queue_counts[queue] = queue_counts.fetch(queue, 0) + len
             update_queues_available(tracking_key, queue, :add)
             mark_runnable(tracking_key, true)
             queues_enabled += 1
           end
         end
+
+        # Overwrite the counts we recalculated rather than deleting the whole hash and building it
+        # back up: on a large keyspace the scan above takes tens of seconds, and workers keep
+        # popping restricted jobs throughout. Every pop landing in that window used to decrement a
+        # count we hadn't restored yet, so a queue that then drained was left reporting a negative
+        # size until the next reset. Worst case now is a single lost decrement per queue, which the
+        # next reset corrects.
+        stale_queues = Resque.redis.hkeys(queue_count_key) - queue_counts.keys
+        Resque.redis.hdel(queue_count_key, *stale_queues) unless stale_queues.empty?
+        Resque.redis.mapped_hmset(queue_count_key, queue_counts) unless queue_counts.empty?
 
         [counts_reset, queues_enabled]
       end

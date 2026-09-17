@@ -385,6 +385,19 @@ describe Resque::Plugins::ConcurrentRestriction do
       ConcurrentRestrictionJob.pop_from_restriction_queue(ConcurrentRestrictionJob.tracking_key, "somequeue2")
       ConcurrentRestrictionJob.queue_counts.should == {"somequeue"=>0, "somequeue2"=>0}
     end
+
+    it "should not change queue_counts when popping an empty restriction queue" do
+      job1 = Resque::Job.new("somequeue", {"class" => "ConcurrentRestrictionJob", "args" => [1]})
+
+      ConcurrentRestrictionJob.push_to_restriction_queue(job1)
+      ConcurrentRestrictionJob.pop_from_restriction_queue(ConcurrentRestrictionJob.tracking_key, "somequeue")
+      ConcurrentRestrictionJob.queue_counts.should == {"somequeue"=>0}
+
+      # A stale runnable entry can send a worker at a restriction queue that has nothing left on it,
+      # and counting those pops drove the queue count negative for good
+      ConcurrentRestrictionJob.pop_from_restriction_queue(ConcurrentRestrictionJob.tracking_key, "somequeue").should be_nil
+      ConcurrentRestrictionJob.queue_counts.should == {"somequeue"=>0}
+    end
   end
 
   context "#stash_if_restricted" do
@@ -594,6 +607,20 @@ describe Resque::Plugins::ConcurrentRestriction do
 
       ConcurrentRestrictionJob.queue_counts.should == {"queue1"=>2, "queue2"=>2, "queue3"=>1}
 
+    end
+
+    it "should not zero out the queue counts while it recalculates them" do
+      job1 = Resque::Job.new("queue1", {"class" => "ConcurrentRestrictionJob", "args" => [1]})
+      ConcurrentRestrictionJob.push_to_restriction_queue(job1)
+
+      # Deleting the hash up front and building it back up left a window - tens of seconds on a
+      # large keyspace - in which every job a worker popped decremented a count that hadn't been
+      # restored yet, so a queue that then drained was left reporting a negative size
+      Resque.redis.stub(:del).and_call_original
+      Resque.redis.should_not_receive(:del).with("concurrent.queue_counts")
+
+      ConcurrentRestrictionJob.reset_restrictions.should == [0, 1]
+      ConcurrentRestrictionJob.queue_counts.should == {"queue1"=>1}
     end
 
     it "should handle a large amount of concurrent keys" do
